@@ -1,0 +1,188 @@
+---
+title: "Letter to editor"
+author:
+- Siddarth David
+- Chandrika Verma
+always_allow_html: yes
+output:
+  html_document:
+    word_document: null
+    df_print: paged
+    fig_caption: yes
+  word_document: default
+bibliography: bibliography.bib
+csl: bmcemerg.csl
+documentclass: article
+---
+A recent paper from Malawi compared the risk of mortality among vehicular trauma patients transported by different modes of transport [@Purcell2020]. After adjusting for injury severity, the paper reported  higher risk of mortality among patients transferred by police vehicles. India, with a large trauma burden, has limited availability of ambulances consequently, other forms of transport, such as police vans are used [@Abbafati2020; @Subhan2010; @Dharap2017].   
+
+We used the TITCO-India data set, based on data from four tertiary care hospitals across urban India (collected between 2013-2015), to measure the risk of mortality by mode of transportation to the hospital in directly admitted vehicular trauma patients. We estimated the relative risk of mortality using a Poisson multivariate regression. We adjusted for age, sex, and trauma severity using Injury Severity Score (ISS). 
+
+```{r include = FALSE, message = FALSE, echo = FALSE, warning = FALSE}
+## Load packages
+library(rio)
+library(tidyr)
+library(dplyr)
+library(rmarkdown)
+library(kableExtra)
+
+## Loading the csv file
+url <- "https://raw.githubusercontent.com/titco/titco-I/master/titco-I-full-dataset-v1.csv"
+titco <- import(url) %>% as_tibble()
+
+total.dataset <- nrow(titco)
+
+##Select adult patients
+##Making age numeric
+titco$age <- as.numeric(titco$age)
+
+##Creating new data set by filtering adults
+adult.titco <- filter(titco, age > 17) 
+
+##Select Road Traffic Injuries cohort
+##Making mechanism of injury factor
+adult.titco$moi <- as.factor(adult.titco$moi)
+
+##Filtering RTI
+rti.titco <-
+  filter(adult.titco, moi %in% c("Road traffic injury (bicyclist)", "Road traffic injury (driver)",
+                                  "Road traffic injury (motorcyclist)", "Road traffic injury (passenger)",
+                                  "Road traffic injury (pedestrian)", "Road traffic injury (unspecified)"))
+
+##Filtering Transferred patients
+rti.direct.titco <-
+  filter(rti.titco, tran %in% c("No"))
+
+rti.total <- nrow(rti.direct.titco)
+
+##Creating a new data set with required variables 
+rti.titco.raw <- select(rti.direct.titco, age, sex, mot, gcs_t_1, ti, 
+                        sbp_1, hr_1, rr_1, spo2_1, iss, died)
+
+##Taking only complete cases
+rti.titco.clean <- rti.titco.raw[complete.cases(rti.titco.raw),]
+
+complete.dataset <- nrow(rti.titco.clean)
+
+##Converting to data to numeric and categorical
+rti.titco.clean$died <- ifelse(rti.titco.clean$died == "Yes", 1, 0)
+rti.titco.clean$iss <- as.numeric(rti.titco.clean$iss)
+rti.titco.clean$sbp_1 <- as.numeric(rti.titco.clean$sbp_1)
+rti.titco.clean$rr_1 <- as.numeric(rti.titco.clean$rr_1)
+rti.titco.clean$hr_1 <- as.numeric(rti.titco.clean$hr_1)
+rti.titco.clean$spo2_1 <- as.numeric(rti.titco.clean$spo2_1)
+rti.titco.clean$spo2_1 <- as.numeric(rti.titco.clean$spo2_1)
+rti.titco.clean$gcs_t_1 <- as.numeric(rti.titco.clean$gcs_t_1)
+
+
+rti.titco.clean$sex <- as.factor(rti.titco.clean$sex)
+rti.titco.clean$mot <- as.factor(rti.titco.clean$mot)
+rti.titco.clean$mot <- recode(rti.titco.clean$mot, "Carried by man"  ="Others", "Other" ="Others")
+
+##Un adjusted relative risk of mortality
+summary(unadjusted.reg <- glm(died ~ mot, data = rti.titco.clean, family = "poisson"))
+exp(coef(unadjusted.reg))
+unadjusted.rr <- 1.54
+
+## Un adjusted RR mortality is 1.54 for police van transport
+
+##Adjusting for age, sex, ISS
+summary(age.sex.iss.reg <- glm(died ~ mot + age + sex + iss, data = rti.titco.clean, 
+                               family = "poisson"))
+
+exp(coef(age.sex.iss.reg))
+
+iss.adjusted.rr <- 1.50
+
+## Un adjusted RR mortality is 1.50 for police van transport
+
+
+##<!--Do we adjust for age, sex, and ISS or the variables: GCS, HR, SBP, SPO2, and RR, as well?--!>
+
+##Adjusting for age, sex, ISS, GCS, HR, SBP, SPO2, RR
+summary(all.adjusted.reg <- glm(died ~ mot + age + sex + iss + gcs_t_1 + hr_1 + rr_1 + 
+                                  spo2_1 + sbp_1, data = rti.titco.clean, family = "poisson"))
+
+exp(coef(all.adjusted.reg))
+
+adjusted.rr <- 1.19
+
+## Adjusted RR mortality is 1.19 for police van transport
+
+
+##<!--I am still trying to figure out how to calculate CI (95%) and p value for RR of mortality--!>
+```
+```{r, tables, include = FALSE, message = FALSE}
+##Load Packages
+library(tableone)
+library(kableExtra)
+library(knitr)
+
+##Table 1
+
+#Gender
+gender.summary <- table(rti.titco.clean$sex)    
+gender.female <- round(as.numeric(gender.summary[[1]])/NROW(rti.titco.clean$sex)*100,2)
+
+
+#Age
+age.mean <- mean(rti.titco.clean$age)
+age.sd <- sd(rti.titco.clean$age)
+
+#ISS
+iss.mean <- mean(rti.titco.clean$iss)
+iss.sd <- sd(rti.titco.clean$iss)
+
+##Mode of Transport 
+mot.summary <- summary(rti.titco.clean$mot)
+
+ambulance.percent <-round(mot.summary[["Ambulance"]]/nrow(rti.titco.clean)*100,2)
+police.percent <-round(mot.summary[["Police"]]/nrow(rti.titco.clean)*100,2)
+car.percent <-round(mot.summary[["Private car"]]/nrow(rti.titco.clean)*100,2)
+taxi.percent <-round(mot.summary[["Taxi, motor rickshaw"]]/nrow(rti.titco.clean)*100,2)
+others.percent <-round(mot.summary[["Others"]]/nrow(rti.titco.clean)*100,2)
+
+##Mortality
+mortality.summary <- table(rti.titco.clean$died)    
+mortality.rate <- round(sum(rti.titco.clean$died)/NROW(rti.titco.clean)*100,2)
+
+table.one <- data.frame(
+                  Variable = c("Gender (female %)", "Age, years, mean (SD)", "ISS, mean (SD)","Mortality (%)"), 
+                  Summary = c("13.66", "35.4 (12.9)", "11.6 (7.01)","15.21")
+  
+)
+
+
+##Table 2
+table.two <- data.frame(
+      "Mode of Transport" = c("Ambulance", "Police Vehicle", "Private vehicle", "Motor Rickshaw, Taxi car", "Others"),                   "Patients Transported" = c("23.77", "39.59", "21.87", "14.52", "0.26"),
+                  "Adjusted Relative Risk" = c("Ref","1.50","0.78", "1.13", "0.000002")
+)
+
+```
+
+```{r echo = FALSE}
+library(knitr)
+
+
+kable(table.one, caption = "Table 1: Demographic Characterstics of directly admitted Vehicular Trauma in TITCO-India Data set")  %>%
+ kable_styling("striped") %>%
+  row_spec(nrow(table.one), bold = TRUE)
+
+kable(table.two, caption = "Table 2: Poisson multivariate regression for mortality adjusted for Age, sex, ISS")  %>%
+ kable_styling("striped") %>%
+  footnote(symbol = c("Patients transported in per cent", "Adjusted for Age, Sex, and Injury Severity Score"))
+  
+
+
+``` 
+
+Of the `r total.dataset` patients in the TITCO-India data set, `r rti.total` were adult vehicular trauma patients who were directly admitted to the study sites. of these complete data set was available for `r complete.dataset` patients.A brief demographic profile the study cohort is given in Table 1. The overall mortality was `r mortality.rate` per cent. The most common mode of transport used for direct vehicular trauma patients was police vehicles (`r police.percent`%), followed by ambulance (`r ambulance.percent`%), private vehicles (`r car.percent`%), and public transport such as motor rickshaws and cars (`r taxi.percent`%).
+
+The Poisson multivariate regression analysis showed that the relative risk of mortality for police vehicles was higher when compared to patients transported by ambulances (RR `r iss.adjusted.rr`, 95% CI x–y, p = y), when adjusting for age, sex, and ISS. This was lower than the relative risk of mortality due to private vehicles or taxis and motor rickshaws when compared to ambulances (Table 2). 
+
+This analysis of the TITCO-India data set show similar results to the findings by the authors using data from Malawi. Therefore, there is a need to explore context-specific strategies such as training the police personnel to address the burden of trauma mortality in low-resource settings.
+
+
+References
+==========
