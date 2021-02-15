@@ -16,13 +16,14 @@ documentclass: article
 ---
 A recent paper from Malawi compared the risk of mortality among vehicular trauma patients transported by different modes of transport [@Purcell2020]. After adjusting for injury severity, the paper reported  higher risk of mortality among patients transferred by police vehicles. India, with a large trauma burden, has limited availability of ambulances consequently, other forms of transport, such as police vans are used [@Abbafati2020; @Subhan2010; @Dharap2017].   
 
-We used the TITCO-India data set, based on data from four tertiary care hospitals across urban India (collected between 2013-2015), to measure the risk of mortality by mode of transportation to the hospital in directly admitted vehicular trauma patients. We estimated the relative risk of mortality using a Poisson multivariate regression. We adjusted for age, sex, and trauma severity using Injury Severity Score (ISS). 
+We used the Towards Improved Trauma Care Outcomes (TITCO) in India cohort, based on data from four tertiary care hospitals across urban India (collected between 2013-2015), to measure the risk of mortality by mode of transportation to the hospital in directly admitted vehicular trauma patients. We estimated the relative risk of mortality using a Poisson multivariate regression. We adjusted for age, sex, and trauma severity using Injury Severity Score (ISS). 
 
 ```{r include = FALSE, message = FALSE, echo = FALSE, warning = FALSE}
 ## Load packages
 library(rio)
 library(tidyr)
 library(dplyr)
+library(broom)
 library(rmarkdown)
 library(kableExtra)
 
@@ -79,20 +80,65 @@ rti.titco.clean$sex <- as.factor(rti.titco.clean$sex)
 rti.titco.clean$mot <- as.factor(rti.titco.clean$mot)
 rti.titco.clean$mot <- recode(rti.titco.clean$mot, "Carried by man"  ="Others", "Other" ="Others")
 
-##Un adjusted relative risk of mortality
-summary(unadjusted.reg <- glm(died ~ mot, data = rti.titco.clean, family = "poisson"))
-exp(coef(unadjusted.reg))
-unadjusted.rr <- 1.54
+## Create function to output tidy table
+#' Format regression table
+#'
+#' Creates a formatted regression table
+#' @param model.object The model object. No default.
+#' @export
+format_regression_table <- function(model.object) {
+    model <- model.object$model
+    xlevels <- model.object$xlevels
+    term.labels <- setNames(nm = names(model)[-1])
+    fn <- function(x, e = TRUE) sprintf("%.3f", ifelse(rep(e, length(x)), exp(x), x))
+    ## broom::tidy with conf.int = TRUE is where you get your 95% CI
+    table <- broom::tidy(model.object, conf.int = TRUE) %>%
+        mutate(param = as.character(term),
+                             level = "",
+               rr = paste0(fn(estimate),
+                           " (", fn(conf.low),
+                           ", ", fn(conf.high), ")"),
+               p = fn(p.value, e = FALSE),
+               .keep = "none")
+    colnames(table) <- c("Parameter", "Level", "Relative risk (95% CI)", "P-value")
+    table.comps <- lapply(term.labels, function (term.label) {
+        if (term.label %in% names(xlevels)) {
+            terms <- paste0(term.label, xlevels[[term.label]])
+            in.table <- terms %in% table$Parameter
+            term.levels <- substring(terms, nchar(term.label) + 1)
+            ref <- term.levels[!in.table]
+            term.table <- table[table$Parameter %in% terms, ]
+            term.table$Parameter <- ""
+            term.table <- rbind(c(term.label, ref, "Reference", ""), term.table)
+            term.table$Level <- term.levels
+        } else {
+            term.table <- table[grep(paste0("^", term.label, "$"), table$Parameter), ]
+        }
+        term.table
+    })
+    final.table <- do.call(rbind, table.comps)
+    rownames(final.table) <- NULL
+    return (final.table)
+} 
 
+## mot = "Others" is causing trouble for the confidence interval
+## estimation because of the few observations. I suggest you deal with
+## that somehow, for example by removing those observations.
+rti.titco.clean$mot <- as.character(rti.titco.clean$mot)
+rti.titco.clean <- rti.titco.clean %>% filter(mot != "Others")
+rti.titco.clean$mot <- as.factor(rti.titco.clean$mot)
+
+## Un adjusted relative risk of mortality
+unadjusted.reg <- glm(died ~ mot, data = rti.titco.clean, family = "poisson")
+unadjusted.table <- format_regression_table(unadjusted.reg)
+unadjusted.rr <- exp(coef(unadjusted.reg))["motPolice"]
 ## Un adjusted RR mortality is 1.54 for police van transport
 
 ##Adjusting for age, sex, ISS
-summary(age.sex.iss.reg <- glm(died ~ mot + age + sex + iss, data = rti.titco.clean, 
-                               family = "poisson"))
-
-exp(coef(age.sex.iss.reg))
-
-iss.adjusted.rr <- 1.50
+age.sex.iss.reg <- glm(died ~ mot + age + sex + iss, data = rti.titco.clean, 
+                       family = "poisson")
+age.sex.iss.table <- format_regression_table(age.sex.iss.reg)
+age.sex.iss.rr <- exp(coef(age.sex.iss.reg))["motPolice"]
 
 ## Un adjusted RR mortality is 1.50 for police van transport
 
@@ -177,11 +223,11 @@ kable(table.two, caption = "Table 2: Poisson multivariate regression for mortali
 
 ``` 
 
-Of the `r total.dataset` patients in the TITCO-India data set, `r rti.total` were adult vehicular trauma patients who were directly admitted to the study sites. of these complete data set was available for `r complete.dataset` patients.A brief demographic profile the study cohort is given in Table 1. The overall mortality was `r mortality.rate` per cent. The most common mode of transport used for direct vehicular trauma patients was police vehicles (`r police.percent`%), followed by ambulance (`r ambulance.percent`%), private vehicles (`r car.percent`%), and public transport such as motor rickshaws and cars (`r taxi.percent`%).
+Of the `r total.dataset` patients in the TITCO cohort, `r rti.total` were adult vehicular trauma patients who were directly admitted to the study sites. Of these complete data was available for `r complete.dataset` patients. A brief demographic profile the study cohort is given in Table 1. The overall mortality was `r mortality.rate` per cent. The most common mode of transport used for direct vehicular trauma patients was police vehicles (`r police.percent`%), followed by ambulance (`r ambulance.percent`%), private vehicles (`r car.percent`%), and public transport such as motor rickshaws and cars (`r taxi.percent`%).
 
 The Poisson multivariate regression analysis showed that the relative risk of mortality for police vehicles was higher when compared to patients transported by ambulances (RR `r iss.adjusted.rr`, 95% CI x–y, p = y), when adjusting for age, sex, and ISS. This was lower than the relative risk of mortality due to private vehicles or taxis and motor rickshaws when compared to ambulances (Table 2). 
 
-This analysis of the TITCO-India data set show similar results to the findings by the authors using data from Malawi. Therefore, there is a need to explore context-specific strategies such as training the police personnel to address the burden of trauma mortality in low-resource settings.
+This analysis shows similar results to the findings by the authors using data from Malawi. Therefore, there is a need to explore context-specific strategies such as training the police personnel to address the burden of trauma mortality in low-resource settings.
 
 
 References
