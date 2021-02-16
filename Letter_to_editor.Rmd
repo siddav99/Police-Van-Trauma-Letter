@@ -3,18 +3,21 @@ title: "Letter to editor"
 author:
 - Siddarth David
 - Chandrika Verma
+- Kapil Dev Soni
+- Nobhojit Roy
+- Martin Gerdin Wärnberg
 always_allow_html: yes
 output:
+  word_document: default
   html_document:
     word_document: null
     df_print: paged
     fig_caption: yes
-  word_document: default
 bibliography: bibliography.bib
 csl: bmcemerg.csl
 documentclass: article
 ---
-A recent paper from Malawi compared the risk of mortality among vehicular trauma patients transported by different modes of transport [@Purcell2020]. After adjusting for injury severity, the paper reported  higher risk of mortality among patients transferred by police vehicles. India, with a large trauma burden, has limited availability of ambulances consequently, other forms of transport, such as police vans are used [@Abbafati2020; @Subhan2010; @Dharap2017].   
+A recent paper from Malawi compared the risk of mortality among vehicular trauma patients transported by different modes of transport [@Purcell2020]. After adjusting for injury severity, the paper reported  higher risk of mortality among patients transferred by police vehicles. India, like Malawi, is a low- and middle-income country and has a large burden of trauma [@Abbafati2020]. Similarly, India has limited pre-hospital services such and different forms of transport, such as police vans are used to take trauma patients to the hospital  [@Subhan2010; @Dharap2017].   
 
 We used the Towards Improved Trauma Care Outcomes (TITCO) in India cohort, based on data from four tertiary care hospitals across urban India (collected between 2013-2015), to measure the risk of mortality by mode of transportation to the hospital in directly admitted vehicular trauma patients. We estimated the relative risk of mortality using a Poisson multivariate regression. We adjusted for age, sex, and trauma severity using Injury Severity Score (ISS). 
 
@@ -56,9 +59,15 @@ rti.direct.titco <-
 
 rti.total <- nrow(rti.direct.titco)
 
+rti.direct.titco$toi
+rti.direct.titco$doi
+rti.direct.titco$toar
+rti.direct.titco$doar
+
+
 ##Creating a new data set with required variables 
 rti.titco.raw <- select(rti.direct.titco, age, sex, mot, gcs_t_1, ti, 
-                        sbp_1, hr_1, rr_1, spo2_1, iss, died)
+                        sbp_1, hr_1, rr_1, spo2_1, iss, toi, doi, toar, doar, died)
 
 ##Taking only complete cases
 rti.titco.clean <- rti.titco.raw[complete.cases(rti.titco.raw),]
@@ -79,6 +88,11 @@ rti.titco.clean$gcs_t_1 <- as.numeric(rti.titco.clean$gcs_t_1)
 rti.titco.clean$sex <- as.factor(rti.titco.clean$sex)
 rti.titco.clean$mot <- as.factor(rti.titco.clean$mot)
 rti.titco.clean$mot <- recode(rti.titco.clean$mot, "Carried by man"  ="Others", "Other" ="Others")
+
+##Calculating time to arrival
+rti.titco.clean$timdiff <- as.numeric(difftime(strptime(paste(rti.titco.clean$doar, rti.titco.clean$toar),"%Y-%m-%d %H:%M"),
+                                       strptime(paste(rti.titco.clean$doi, rti.titco.clean$toi),"%Y-%m-%d %H:%M"), 
+                        units = "hour"))
 
 ## Create function to output tidy table
 #' Format regression table
@@ -121,42 +135,38 @@ format_regression_table <- function(model.object) {
     return (final.table)
 } 
 
-## mot = "Others" is causing trouble for the confidence interval
-## estimation because of the few observations. I suggest you deal with
-## that somehow, for example by removing those observations.
+##Removing Others category (n=3)
 rti.titco.clean$mot <- as.character(rti.titco.clean$mot)
 rti.titco.clean <- rti.titco.clean %>% filter(mot != "Others")
 rti.titco.clean$mot <- as.factor(rti.titco.clean$mot)
 
+##Calculating RR of Mortality
 ## Un adjusted relative risk of mortality
 unadjusted.reg <- glm(died ~ mot, data = rti.titco.clean, family = "poisson")
 unadjusted.table <- format_regression_table(unadjusted.reg)
 unadjusted.rr <- exp(coef(unadjusted.reg))["motPolice"]
-## Un adjusted RR mortality is 1.54 for police van transport
 
 ##Adjusting for age, sex, ISS
-age.sex.iss.reg <- glm(died ~ mot + age + sex + iss, data = rti.titco.clean, 
-                       family = "poisson")
+age.sex.iss.reg <- glm(died ~ mot + age + sex + iss + timdiff, data = rti.titco.clean, family = "poisson")
 age.sex.iss.table <- format_regression_table(age.sex.iss.reg)
 age.sex.iss.rr <- exp(coef(age.sex.iss.reg))["motPolice"]
 
-## Un adjusted RR mortality is 1.50 for police van transport
+adjusted.rr <- 1.52
+adjusted.rr.ci.lo <- 1.03
+adjusted.rr.ci.up <- 2.32
+adjusted.rr.p.value <- 0.03
 
 
-##<!--Do we adjust for age, sex, and ISS or the variables: GCS, HR, SBP, SPO2, and RR, as well?--!>
 
-##Adjusting for age, sex, ISS, GCS, HR, SBP, SPO2, RR
-summary(all.adjusted.reg <- glm(died ~ mot + age + sex + iss + gcs_t_1 + hr_1 + rr_1 + 
-                                  spo2_1 + sbp_1, data = rti.titco.clean, family = "poisson"))
 
-exp(coef(all.adjusted.reg))
-
-adjusted.rr <- 1.19
+##Adjusting for age, sex, ISS, GCS, HR, SBP, SPO2, RR (Decided to not go forward)
+##all.adjusted.reg <- glm(died ~ mot + age + sex + iss + gcs_t_1 + hr_1 + rr_1 + 
+                                  ##spo2_1 + sbp_1, data = rti.titco.clean, family = "poisson")
+##all.adjusted.table <- format_regression_table(all.adjusted.reg)
+##all.adjusted.rr <- exp(coef(all.adjusted.reg))["motPolice"]
 
 ## Adjusted RR mortality is 1.19 for police van transport
 
-
-##<!--I am still trying to figure out how to calculate CI (95%) and p value for RR of mortality--!>
 ```
 ```{r, tables, include = FALSE, message = FALSE}
 ##Load Packages
@@ -175,9 +185,15 @@ gender.female <- round(as.numeric(gender.summary[[1]])/NROW(rti.titco.clean$sex)
 age.mean <- mean(rti.titco.clean$age)
 age.sd <- sd(rti.titco.clean$age)
 
+
 #ISS
+iss.summary <- summary(rti.titco.clean$iss)
 iss.mean <- mean(rti.titco.clean$iss)
 iss.sd <- sd(rti.titco.clean$iss)
+iss.median <- iss.summary[["Median"]]
+iss.iqr.lo <- iss.summary[["1st Qu."]]
+iss.iqr.up <- iss.summary[["3rd Qu."]]
+
 
 ##Mode of Transport 
 mot.summary <- summary(rti.titco.clean$mot)
@@ -186,23 +202,31 @@ ambulance.percent <-round(mot.summary[["Ambulance"]]/nrow(rti.titco.clean)*100,2
 police.percent <-round(mot.summary[["Police"]]/nrow(rti.titco.clean)*100,2)
 car.percent <-round(mot.summary[["Private car"]]/nrow(rti.titco.clean)*100,2)
 taxi.percent <-round(mot.summary[["Taxi, motor rickshaw"]]/nrow(rti.titco.clean)*100,2)
-others.percent <-round(mot.summary[["Others"]]/nrow(rti.titco.clean)*100,2)
+
+
+## Length of hospital stay
+summary(rti.titco.clean$timdiff)
+
+summary(rti.titco.clean$timdiff[rti.titco.clean$mot=="Ambulance"])
+summary(rti.titco.clean$timdiff[rti.titco.clean$mot=="Police"])
+summary(rti.titco.clean$timdiff[rti.titco.clean$mot=="Private car"])
+summary(rti.titco.clean$timdiff[rti.titco.clean$mot=="Taxi, motor rickshaw"])
 
 ##Mortality
 mortality.summary <- table(rti.titco.clean$died)    
 mortality.rate <- round(sum(rti.titco.clean$died)/NROW(rti.titco.clean)*100,2)
 
 table.one <- data.frame(
-                  Variable = c("Gender (female %)", "Age, years, mean (SD)", "ISS, mean (SD)","Mortality (%)"), 
-                  Summary = c("13.66", "35.4 (12.9)", "11.6 (7.01)","15.21")
-  
+                  Variable = c("Gender (female %)", "Age, years, mean (SD)", "Injury Severity, median (IQR)", "Mode of Transport (%)", "Ambulance", "Police Vehicle", "Private vehicle", "Motor Rickshaw, Taxi car","Minibus", "Others","Time of Presentation, median (IQR)", "Mortality (%)"), 
+                  TITCO_India = c("13.69", "35.4 (12.9)", "10 (8-14)", "", "23.77", "39.59", "21.87", "14.52","--", "--", "1 (0.6-2)", "15.25"),
+                  Purcell_et_all_2020 = c("19.8", "31.6 (15.9)", "8 (5–9)", "", "--", "9.4", "68.8", "--", "17.4", "4.4", "1 (0-3)", "7.8")
 )
-
 
 ##Table 2
 table.two <- data.frame(
-      "Mode of Transport" = c("Ambulance", "Police Vehicle", "Private vehicle", "Motor Rickshaw, Taxi car", "Others"),                   "Patients Transported" = c("23.77", "39.59", "21.87", "14.52", "0.26"),
-                  "Adjusted Relative Risk" = c("Ref","1.50","0.78", "1.13", "0.000002")
+      "_" = c("Relative Risk", "CI at 95%", "p-value"),                   
+          TITCO_India_Dataset = c("1.529", "(1.032, 2.321)", "0.03"),
+      Purcell_et_al_2020 = c("1.56", "(1.13–2.17)", "0.08")
 )
 
 ```
@@ -211,23 +235,23 @@ table.two <- data.frame(
 library(knitr)
 
 
-kable(table.one, caption = "Table 1: Demographic Characterstics of directly admitted Vehicular Trauma in TITCO-India Data set")  %>%
+kable(table.one, caption = "Table 1:Characterstics of directly admitted Vehicular Trauma in TITCO-India Data set and Purceell et al. 2020")  %>%
  kable_styling("striped") %>%
+  footnote(symbol = c("Injury Severity Score","Malawi Trauma Score")) %>%
   row_spec(nrow(table.one), bold = TRUE)
 
-kable(table.two, caption = "Table 2: Poisson multivariate regression for mortality adjusted for Age, sex, ISS")  %>%
+kable(table.two, caption = "Table 2: Relative Risk of Mortality of patients brought by Police Vehicles")  %>%
  kable_styling("striped") %>%
-  footnote(symbol = c("Patients transported in per cent", "Adjusted for Age, Sex, and Injury Severity Score"))
+  footnote(symbol = c("Adjusted for time to presentation, injury severity, and injury mechanism, Reference group Ambulance", "Adjusted for time for presentation, Age, Sex, and Injury Severity","Refernce group Ambulance Reference group private vehicles")
+           )
   
-
-
 ``` 
 
-Of the `r total.dataset` patients in the TITCO cohort, `r rti.total` were adult vehicular trauma patients who were directly admitted to the study sites. Of these complete data was available for `r complete.dataset` patients. A brief demographic profile the study cohort is given in Table 1. The overall mortality was `r mortality.rate` per cent. The most common mode of transport used for direct vehicular trauma patients was police vehicles (`r police.percent`%), followed by ambulance (`r ambulance.percent`%), private vehicles (`r car.percent`%), and public transport such as motor rickshaws and cars (`r taxi.percent`%).
+Of the `r total.dataset` patients in the TITCO cohort, `r rti.total` were adult vehicular trauma patients who were directly admitted to the study sites. Of these complete data was available for `r complete.dataset` patients. A brief comparison of the patient profile of the Indian and the Malawi cohorts is given in Table 1. The overall mortality was `r mortality.rate` per cent. The most common mode of transport used for direct vehicular trauma patients was police vehicles (`r police.percent`%), followed by ambulance (`r ambulance.percent`%), private vehicles (`r car.percent`%), and public transport such as motor rickshaws and cars (`r taxi.percent`%).
 
-The Poisson multivariate regression analysis showed that the relative risk of mortality for police vehicles was higher when compared to patients transported by ambulances (RR `r iss.adjusted.rr`, 95% CI x–y, p = y), when adjusting for age, sex, and ISS. This was lower than the relative risk of mortality due to private vehicles or taxis and motor rickshaws when compared to ambulances (Table 2). 
+The Poisson multivariate regression analysis showed that the relative risk of mortality for police vehicles was higher when compared to patients transported by ambulances (RR `r adjusted.rr`, 95% CI `r adjusted.rr.ci.lo`– `r adjusted.rr.ci.up`, p value = `r adjusted.rr.p.value`), when adjusting for age, sex, and ISS. This was higher than the relative risk of mortality due to private vehicles or taxis and motor rickshaws when compared to ambulances (Table 2). 
 
-This analysis shows similar results to the findings by the authors using data from Malawi. Therefore, there is a need to explore context-specific strategies such as training the police personnel to address the burden of trauma mortality in low-resource settings.
+Nearly one-fourth of the patients in the TITCO cohort arrived by ambulance, indicating the maturity of the pre-hospital care system existing in urban India. The relative risk of mortality of patients brought by police vehicles are very similar (1.53 vs 1.56) in both the countries. Our analysis underscores that the solutions suggested by the authors for Malawi may be be applied in the urban Indian setting. Therefore, there is a need to explore context-specific strategies such as training the police personnel to address the burden of trauma mortality in LMIC settings with underdeveloped pre-hospital system.
 
 
 References
